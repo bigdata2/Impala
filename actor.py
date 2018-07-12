@@ -39,6 +39,7 @@ class trajectory(object):
     self.states  = []
     self.actions = []
     self.rewards = []
+    self.actor_id = None
     #self.terminal = False
 
   def append(self, state, action, reward):
@@ -46,6 +47,9 @@ class trajectory(object):
     self.actions += [action]
     self.rewards += [reward] 
     #self.terminal = terminal
+
+  def length(self):
+    return len(self.rewards)
  
 @ray.remote
 class Actor(object):
@@ -69,6 +73,7 @@ class Actor(object):
     weights = ray.get(self.parameterserver.pull.remote())
     self.model.load_state_dict(weights)
     rollout = trajectory()
+    rollout.actor_id = self.id
     totalreward = 0
     steps = 0
     for _ in range(self.length):
@@ -83,10 +88,9 @@ class Actor(object):
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward
       steps += 1
-      #trajectory.append((obs['RGB_INTERLEAVED'], action, reward))
       rollout.append(obs['RGB_INTERLEAVED'], action, reward)
     print("Rollout Finished Total Reward:  {}".format(totalreward))
-    #print ("len(trajectory) ",len(trajectory))
+    #print ("len(rollout) ",rollout.length())
     return rollout
       
   def get_id(self):

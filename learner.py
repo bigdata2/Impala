@@ -54,7 +54,8 @@ class Learner(object):
   def get_id(self):
     return self.id
 
-  def run(self, length, width, height, fps, level, record, demo, video, agents_num, actors):
+  def run(self, length, width, height, fps, level, record, demo, video, 
+          agents_num, actors):
     """Spins up an environment and runs the random agent."""
     print("level............................... ", level)
     config = {
@@ -70,16 +71,17 @@ class Learner(object):
       config['video'] = video
     config['demofiles'] = "/tmp"
 
+    actorsObjIds = [actor.run.remote() for actor in actors]
     while True:
-    	actorsObjIds = [actor.run.remote() for actor in actors]
-    	#ray.wait(actorsObjIds, len(agents))
-    	ready, _ = ray.wait(actorsObjIds, 5)
+    	ready, actorsObjIds = ray.wait(actorsObjIds, 5)
    	trajectory = ray.get(ready)
     	print("number of actors ", len(trajectory))
 	for t in trajectory:
-		print ("Reward for trajectory: ", t.rewards[0], t.rewards[90])
-    	#print("length of trajectory ", len(trajectory[0]))
-    	#print(trajectory)
+		if t.length():
+		   print ("Reward for trajectory: ", t.rewards[0])
+		actorsObjIds.extend([actors[t.actor_id].run.remote()])
+
+    return
     
 
 if __name__ == '__main__':
