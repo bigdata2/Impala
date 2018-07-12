@@ -20,14 +20,20 @@ def _action(*entries):
   return np.array(entries, dtype=np.intc)
 
 ACTIONS = {
-  'look_left': _action(-20, 0, 0, 1, 0, 0, 0),
-  'look_right': _action(20, 0, 0, 1, 0, 0, 0),
+  'forward': _action(0, 0, 0, 1, 0, 0, 0),
+  'backward': _action(0, 0, 0, -1, 0, 0, 0),
+  'strafe_left': _action(0, 0, -1, 0, 0, 0, 0),
+  'strafe_right': _action(0, 0, 1, 0, 0, 0, 0),
+  'look_left': _action(-20, 0, 0, 0, 0, 0, 0),
+  'look_right': _action(20, 0, 0, 0, 0, 0, 0),
+  'forward_look_left': _action(-20, 0, 0, 1, 0, 0, 0),
+  'forward_look_right': _action(20, 0, 0, 1, 0, 0, 0),
+  'fire': _action(0, 0, 0, 0, 1, 0, 0),
 }
 
 ACTION_LIST = ACTIONS.values()
  
 @ray.remote(num_gpus=1)
-#@ray.remote
 class Learner(object):
   """Learner to get trajectories from Actors running DeepMind Lab simulator."""
 
@@ -64,17 +70,21 @@ class Learner(object):
       config['video'] = video
     config['demofiles'] = "/tmp"
 
-    actorsObjIds = [actor.run.remote() for actor in actors]
-    #ray.wait(actorsObjIds, len(agents))
-    ready, _ = ray.wait(actorsObjIds, 1)
-    trajectory = ray.get(ready)
-    print("length of trajectory ", len(trajectory[0]))
-    print(trajectory)
+    while True:
+    	actorsObjIds = [actor.run.remote() for actor in actors]
+    	#ray.wait(actorsObjIds, len(agents))
+    	ready, _ = ray.wait(actorsObjIds, 5)
+   	trajectory = ray.get(ready)
+    	print("number of actors ", len(trajectory))
+	for t in trajectory:
+		print ("Reward for trajectory: ", t[0][2])
+    	#print("length of trajectory ", len(trajectory[0]))
+    	#print(trajectory)
     
 
 if __name__ == '__main__':
    RAY_HEAD="10.145.142.25:6379"
-   NUMBER_OF_AGENTS=1
+   NUMBER_OF_ACTORS=5
    
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("-s", "--standalone",
@@ -82,8 +92,8 @@ if __name__ == '__main__':
    
    parser.add_argument("--cluster",
                        help="the address of the head of the cluster, default is {0}".format(RAY_HEAD), default=RAY_HEAD)
-   parser.add_argument("--agents", type=int, default=NUMBER_OF_AGENTS,
-                       help="the number of agents to start, default is {0}".format(NUMBER_OF_AGENTS))
+   parser.add_argument("--actors", type=int, default=NUMBER_OF_ACTORS,
+                       help="the number of actors to start, default is {0}".format(NUMBER_OF_ACTORS))
    parser.add_argument('--length', type=int, default=1000,
                        help='Number of steps to run the agent')
    parser.add_argument('--width', type=int, default=280,
@@ -137,9 +147,11 @@ if __name__ == '__main__':
    config['demofiles'] = "/tmp"
 
    # Start agents.
-   actors = [Actor.remote(idx, args.length, args.level_script, config, ps) for idx in range(args.agents)]
+   actors = [Actor.remote(idx, args.length, args.level_script, config, ps) 
+	    for idx in range(args.actors)]
 
-   objid = learner.run.remote(args.length, args.width, args.height, args.fps, args.level_script,
-       args.record, args.demo, args.video, args.agents, actors)
+   objid = learner.run.remote(args.length, args.width, args.height, 
+		args.fps, args.level_script, args.record, args.demo,
+	        args.video, args.actors, actors)
   
    ray.wait([objid])
