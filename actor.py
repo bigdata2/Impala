@@ -30,14 +30,28 @@ ACTIONS = {
 }
 
 ACTION_LIST = ACTIONS.values()
+
+
+class trajectory(object):
+  """class to store trajectory data."""
+  
+  def __init__(self):
+    self.states  = []
+    self.actions = []
+    self.rewards = []
+    #self.terminal = False
+
+  def append(self, state, action, reward):
+    self.states  += [state]
+    self.actions += [action]
+    self.rewards += [reward] 
+    #self.terminal = terminal
  
 @ray.remote
 class Actor(object):
-  """Simple agent for DeepMind Lab."""
+  """Simple actor for DeepMind Lab."""
 
   def __init__(self, idx, length, level, config, ps):
-    # Set an environment variable to tell TensorFlow which GPUs to use. Note
-    # that this must be done before the call to tf.Session.
     print("Initialize Actor environment")
     self.id = idx
     self.steps = 0
@@ -54,7 +68,7 @@ class Actor(object):
 
     weights = ray.get(self.parameterserver.pull.remote())
     self.model.load_state_dict(weights)
-    trajectory = []
+    rollout = trajectory()
     totalreward = 0
     steps = 0
     for _ in range(self.length):
@@ -64,18 +78,16 @@ class Actor(object):
 	break
     
       obs = self.env.observations()
-      #print("State ---> {}".format(obs['RGB_INTERLEAVED']))
       self.model(obs['RGB_INTERLEAVED'])
       action = random.choice(ACTION_LIST)
-      #print("Action ---> {}".format(action))      
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward
-      #print("Reward ---> {}".format(reward))
       steps += 1
-      trajectory.append((obs['RGB_INTERLEAVED'], action, reward))
+      #trajectory.append((obs['RGB_INTERLEAVED'], action, reward))
+      rollout.append(obs['RGB_INTERLEAVED'], action, reward)
     print("Rollout Finished Total Reward:  {}".format(totalreward))
     #print ("len(trajectory) ",len(trajectory))
-    return trajectory
+    return rollout
       
   def get_id(self):
     return self.id

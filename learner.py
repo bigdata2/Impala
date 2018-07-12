@@ -77,7 +77,7 @@ class Learner(object):
    	trajectory = ray.get(ready)
     	print("number of actors ", len(trajectory))
 	for t in trajectory:
-		print ("Reward for trajectory: ", t[0][2])
+		print ("Reward for trajectory: ", t.rewards[0], t.rewards[90])
     	#print("length of trajectory ", len(trajectory[0]))
     	#print(trajectory)
     
