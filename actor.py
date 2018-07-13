@@ -40,13 +40,13 @@ class trajectory(object):
     self.actions = []
     self.rewards = []
     self.actor_id = None
-    #self.terminal = False
+    self.lstm_state = (None, None)
 
-  def append(self, state, action, reward):
+  def append(self, state, action, reward, step):
     self.states  += [state]
     self.actions += [action]
     self.rewards += [reward] 
-    #self.terminal = terminal
+    self.step     = step #trajectory number for debugging only
 
   def length(self):
     return len(self.rewards)
@@ -68,29 +68,26 @@ class Actor(object):
   
   def run(self):    
     """Gets an image state and a reward, returns an action."""
-    print("Step {}".format(self.steps))
-
     weights = ray.get(self.parameterserver.pull.remote())
     self.model.load_state_dict(weights)
     rollout = trajectory()
     rollout.actor_id = self.id
     totalreward = 0
-    steps = 0
+    self.steps += 1
     for _ in range(self.length):
       if not self.env.is_running():
-        print('Environment stopped early')
+        print('Environment stopped. Restarting...')
         self.env.reset()
-	break
+	self.steps = 0
+	if rollout.length(): break
     
       obs = self.env.observations()
       self.model(obs['RGB_INTERLEAVED'])
       action = random.choice(ACTION_LIST)
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward
-      steps += 1
-      rollout.append(obs['RGB_INTERLEAVED'], action, reward)
-    print("Rollout Finished Total Reward:  {}".format(totalreward))
-    #print ("len(rollout) ",rollout.length())
+      rollout.append(obs['RGB_INTERLEAVED'], action, reward, self.steps)
+    print("Rollout Finished Total Reward for actor_id {}:  {}".format(self.id, totalreward))
     return rollout
       
   def get_id(self):

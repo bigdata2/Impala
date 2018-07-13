@@ -38,8 +38,6 @@ class Learner(object):
   """Learner to get trajectories from Actors running DeepMind Lab simulator."""
 
   def __init__(self, ps):
-    # Set an environment variable to tell TensorFlow which GPUs to use. Note
-    # that this must be done before the call to tf.Session.
     print("Initialize GPU environment")
     gpu_ids = ",".join([str(i) for i in ray.get_gpu_ids()])
     os.environ["CUDA_VISIBLE_DEVICES"] = gpu_ids
@@ -77,8 +75,7 @@ class Learner(object):
    	trajectory = ray.get(ready)
     	print("number of actors ", len(trajectory))
 	for t in trajectory:
-		if t.length():
-		   print ("Reward for trajectory: ", t.rewards[0])
+		print ("trajectory actor_id, step: ", t.actor_id, t.step)
 		actorsObjIds.extend([actors[t.actor_id].run.remote()])
 
     return
@@ -148,7 +145,7 @@ if __name__ == '__main__':
      config['video'] = video
    config['demofiles'] = "/tmp"
 
-   # Start agents.
+   # Start actors.
    actors = [Actor.remote(idx, args.length, args.level_script, config, ps) 
 	    for idx in range(args.actors)]
 

@@ -43,7 +43,7 @@ class model_A3C(nn.Module):
                 	init.constant(m.bias, 0)
 
     def forward(self, image_input):
-	#image_input shape (96, 72)
+	#image_input shape is (96, 72)
 	normalize = transforms.Normalize(
         		mean = [127.5, 127.5, 127.5],
         		std  = [127.5, 127.5, 127.5]
@@ -56,12 +56,9 @@ class model_A3C(nn.Module):
 	])
 	img_tensor = preprocess(image_input)
 	img_tensor.unsqueeze_(0)
-	img_tensor
-	#print("----->>> " , img_tensor)
         x = self.layer1(Variable(img_tensor)) if self.isActor else \
 					self.layer1(Variable(img_tensor).cuda())
         x = self.layer2(x)
         x = x.view(x.size(0), -1)
         x = self.layer3(x)
-	#print(x.shape)
 	return x
