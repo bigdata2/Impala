@@ -40,7 +40,7 @@ class Learner(object):
 
   def run(self, length, width, height, fps, level, record, demo, video, 
           agents_num, actors):
-    """Spins up an environment and runs the random agent."""
+    """Gets trajectories from actors and trains learner."""
     print("level............................... ", level)
     config = {
         'fps': str(fps),
