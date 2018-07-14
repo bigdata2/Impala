@@ -4,6 +4,7 @@ import torch.nn.init as init
 from torch.autograd import Variable
 import numpy as np
 from torchvision import transforms
+import actions
 
 def convLayer(in_planes, out_planes, kernel_size, stride):
     seq = nn.Sequential(
@@ -25,13 +26,14 @@ class model_A3C(nn.Module):
 	super(model_A3C, self).__init__()
 
 	self.linear_input_dim = 2816 #output when image size is w=96,h=72
-	self.linear_output_dim = 2 #Change to 256 when lstm is added
+	self.linear_output_dim = 256
 	self.isActor = isActor
 
 	self.layer1 = convLayer(num_channels, num_out_layers, kernel_size=8, stride=4)
 	self.layer2 = convLayer(num_out_layers, num_out_layers*2, kernel_size=4, stride=2)
 	self.layer3 = fcLayer(self.linear_input_dim, self.linear_output_dim)
-	self.lstm = nn.LSTMCell(256, 2)
+	self.lstm = nn.LSTMCell(256, 256)
+	self.actor_linear = nn.Linear(256, actions.action_space())
 	self.weights_init(self.layer1)
 	self.weights_init(self.layer2)
 	self.weights_init(self.layer3)
@@ -42,7 +44,7 @@ class model_A3C(nn.Module):
                 	init.xavier_uniform(m.weight, gain=np.sqrt(2))
                 	init.constant(m.bias, 0)
 
-    def forward(self, image_input):
+    def forward(self, image_input, cin, hin):
 	#image_input shape is (96, 72)
 	normalize = transforms.Normalize(
         		mean = [127.5, 127.5, 127.5],
@@ -61,4 +63,8 @@ class model_A3C(nn.Module):
         x = self.layer2(x)
         x = x.view(x.size(0), -1)
         x = self.layer3(x)
+	#print ("x.shape ", x.shape)
+	if self.isActor:
+		hin, cin = self.lstm(x, (hin, cin))
+		return self.actor_linear(hin), (hin, cin)
 	return x

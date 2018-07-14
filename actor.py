@@ -1,4 +1,4 @@
-"""Agent to generate trajactories"""
+"""Actor to generate trajactories"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -12,25 +12,13 @@ import os
 import deepmind_lab
 import pprint
 from model import model_A3C
+import actions
 import ray
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-def _action(*entries):
-  return np.array(entries, dtype=np.intc)
-
-ACTIONS = {
-  'forward': _action(0, 0, 0, 1, 0, 0, 0),
-  'backward': _action(0, 0, 0, -1, 0, 0, 0),
-  'strafe_left': _action(0, 0, -1, 0, 0, 0, 0),
-  'strafe_right': _action(0, 0, 1, 0, 0, 0, 0),
-  'look_left': _action(-20, 0, 0, 0, 0, 0, 0),
-  'look_right': _action(20, 0, 0, 0, 0, 0, 0),
-  'forward_look_left': _action(-20, 0, 0, 1, 0, 0, 0),
-  'forward_look_right': _action(20, 0, 0, 1, 0, 0, 0),
-  'fire': _action(0, 0, 0, 0, 1, 0, 0),
-}
-
-ACTION_LIST = ACTIONS.values()
-
+ACTION_LIST = actions.getactions().values()
 
 class trajectory(object):
   """class to store trajectory data."""
@@ -40,7 +28,8 @@ class trajectory(object):
     self.actions = []
     self.rewards = []
     self.actor_id = None
-    self.lstm_state = (None, None)
+    self.lstm_hin = None
+    self.lstm_cin = None
 
   def append(self, state, action, reward, step):
     self.states  += [state]
@@ -65,9 +54,11 @@ class Actor(object):
     self.env.reset()
     action_spec = self.env.action_spec()
     self.model = model_A3C(isActor=True)
+    self.cin = torch.zeros(1, 256) #TODO remove hardcoding
+    self.hin = torch.zeros(1, 256) #TODO remove hardcoding
   
   def run(self):    
-    """Gets an image state and a reward, returns an action."""
+    """Run the env for n steps and return a trajectory rollout."""
     weights = ray.get(self.parameterserver.pull.remote())
     self.model.load_state_dict(weights)
     rollout = trajectory()
@@ -79,10 +70,15 @@ class Actor(object):
         print('Environment stopped. Restarting...')
         self.env.reset()
 	self.steps = 0
+    	self.cin = torch.zeros(1, 256) #TODO remove hardcoding
+    	self.hin = torch.zeros(1, 256) #TODO remove hardcoding
 	if rollout.length(): break
     
       obs = self.env.observations()
-      self.model(obs['RGB_INTERLEAVED'])
+      logits, (self.hin, self.cin) = self.model(obs['RGB_INTERLEAVED'], self.cin, self.hin)
+      prob = F.softmax(logits, dim=1)
+      action_idx = prob.max(1)[1].tolist()[0]
+      action = ACTION_LIST[action_idx]
       action = random.choice(ACTION_LIST)
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward

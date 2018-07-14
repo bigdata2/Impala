@@ -12,26 +12,12 @@ import os
 import deepmind_lab
 import pprint
 from model import model_A3C
+import actions
 from parameterserver import ParameterServer
 from actor import Actor
 import ray
 
-def _action(*entries):
-  return np.array(entries, dtype=np.intc)
-
-ACTIONS = {
-  'forward': _action(0, 0, 0, 1, 0, 0, 0),
-  'backward': _action(0, 0, 0, -1, 0, 0, 0),
-  'strafe_left': _action(0, 0, -1, 0, 0, 0, 0),
-  'strafe_right': _action(0, 0, 1, 0, 0, 0, 0),
-  'look_left': _action(-20, 0, 0, 0, 0, 0, 0),
-  'look_right': _action(20, 0, 0, 0, 0, 0, 0),
-  'forward_look_left': _action(-20, 0, 0, 1, 0, 0, 0),
-  'forward_look_right': _action(20, 0, 0, 1, 0, 0, 0),
-  'fire': _action(0, 0, 0, 0, 1, 0, 0),
-}
-
-ACTION_LIST = ACTIONS.values()
+ACTION_LIST = actions.getactions().values()
  
 @ray.remote(num_gpus=1)
 class Learner(object):
@@ -71,7 +57,7 @@ class Learner(object):
 
     actorsObjIds = [actor.run.remote() for actor in actors]
     while True:
-    	ready, actorsObjIds = ray.wait(actorsObjIds, 5)
+    	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
     	print("number of actors ", len(trajectory))
 	for t in trajectory:
@@ -115,7 +101,6 @@ if __name__ == '__main__':
                        help='Record the demo run as a video')
  
    args = parser.parse_args()
-   print (ACTIONS['look_left'])
  
    print("Using Ray Cluster on {}".format(args.cluster))
    if args.standalone is True:
