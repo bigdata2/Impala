@@ -24,17 +24,19 @@ class trajectory(object):
   """class to store trajectory data."""
   
   def __init__(self):
-    self.states  = []
-    self.actions = []
-    self.rewards = []
+    self.states   = []
+    self.actions  = []
+    self.rewards  = []
+    self.pi_at_st = []
     self.actor_id = None
     self.lstm_hin = None
     self.lstm_cin = None
 
-  def append(self, state, action, reward, step):
-    self.states  += [state]
-    self.actions += [action]
-    self.rewards += [reward] 
+  def append(self, state, action, reward, pi, step):
+    self.states   += [state]
+    self.actions  += [action]
+    self.rewards  += [reward] 
+    self.pi_at_st += [pi]
     self.step     = step #trajectory number for debugging only
 
   def length(self):
@@ -54,10 +56,42 @@ class Actor(object):
     self.env.reset()
     action_spec = self.env.action_spec()
     self.model = model_A3C(isActor=True)
-    self.cin = torch.zeros(1, 256) #TODO remove hardcoding
-    self.hin = torch.zeros(1, 256) #TODO remove hardcoding
+    self.lstm_init = torch.zeros(1, 256) #TODO remove hardcoding
+    self.cin = self.lstm_init
+    self.hin = self.lstm_init
   
-  def run(self):    
+  def run_train(self):    
+    """Run the env for n steps and return a trajectory rollout."""
+    weights = ray.get(self.parameterserver.pull.remote())
+    self.model.load_state_dict(weights)
+    rollout = trajectory()
+    rollout.actor_id = self.id
+    totalreward = 0
+    self.steps += 1
+    rollout.lstm_hin = self.hin.tolist()
+    rollout.lstm_cin = self.cin.tolist()
+    for _ in range(self.length):
+      if not self.env.is_running():
+        print('Environment stopped. Restarting...')
+        self.env.reset()
+	self.steps = 0
+    	self.cin = self.lstm_init
+    	self.hin = self.lstm_init
+	if rollout.length(): break
+    
+      obs = self.env.observations()
+      logits, (self.hin, self.cin) = self.model(obs['RGB_INTERLEAVED'], self.cin, self.hin)
+      prob = F.softmax(logits, dim=1)
+      action_idx = prob.multinomial(1)[0].tolist()[0]
+      pi = prob[0][action_idx].tolist()
+      action = ACTION_LIST[action_idx]
+      reward = self.env.step(action, num_steps=4) #for action repeat=4
+      totalreward += reward
+      rollout.append(obs['RGB_INTERLEAVED'], action, reward, pi, self.steps)
+    print("Rollout Finished Total Reward for actor_id {}:  {}".format(self.id, totalreward))
+    return rollout
+
+  def run_test(self):
     """Run the env for n steps and return a trajectory rollout."""
     weights = ray.get(self.parameterserver.pull.remote())
     self.model.load_state_dict(weights)
@@ -69,16 +103,21 @@ class Actor(object):
       if not self.env.is_running():
         print('Environment stopped. Restarting...')
         self.env.reset()
-	self.steps = 0
-    	self.cin = torch.zeros(1, 256) #TODO remove hardcoding
-    	self.hin = torch.zeros(1, 256) #TODO remove hardcoding
-	if rollout.length(): break
-    
+        self.steps = 0
+        self.cin = self.lstm_init
+        self.hin = self.lstm_init
+        if rollout.length(): break
+
       obs = self.env.observations()
       logits, (self.hin, self.cin) = self.model(obs['RGB_INTERLEAVED'], self.cin, self.hin)
       prob = F.softmax(logits, dim=1)
       action_idx = prob.max(1)[1].tolist()[0]
       action = ACTION_LIST[action_idx]
+      #print("logits.shape, self.hin.shape, self.cin.shape ", logits.shape ,self.hin.shape, self.cin.shape)
+      #print("logits ", logits)
+      print("prob ", prob)
+      print("action ", action)
+      #print("logits,self.hin, self.cin ", logits,self.hin, self.cin)
       action = random.choice(ACTION_LIST)
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward

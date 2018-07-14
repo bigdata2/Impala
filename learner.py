@@ -55,15 +55,14 @@ class Learner(object):
       config['video'] = video
     config['demofiles'] = "/tmp"
 
-    actorsObjIds = [actor.run.remote() for actor in actors]
+    actorsObjIds = [actor.run_train.remote() for actor in actors]
     while True:
     	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
-    	print("number of actors ", len(trajectory))
+    	#print("number of actors ", len(trajectory))
 	for t in trajectory:
 		print ("trajectory actor_id, step: ", t.actor_id, t.step)
-		actorsObjIds.extend([actors[t.actor_id].run.remote()])
-
+		actorsObjIds.extend([actors[t.actor_id].run_train.remote()])
     return
     
 
