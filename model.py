@@ -4,7 +4,7 @@ import torch.nn.init as init
 from torch.autograd import Variable
 import numpy as np
 from torchvision import transforms
-import actions
+import utils
 
 def convLayer(in_planes, out_planes, kernel_size, stride):
     seq = nn.Sequential(
@@ -33,7 +33,8 @@ class model_A3C(nn.Module):
 	self.layer2 = convLayer(num_out_layers, num_out_layers*2, kernel_size=4, stride=2)
 	self.layer3 = fcLayer(self.linear_input_dim, self.linear_output_dim)
 	self.lstm = nn.LSTMCell(256, 256)
-	self.actor_linear = nn.Linear(256, actions.action_space())
+	self.actor_linear = nn.Linear(256, utils.action_space())
+	self.softmax = nn.Softmax()
 	self.weights_init(self.layer1)
 	self.weights_init(self.layer2)
 	self.weights_init(self.layer3)
@@ -44,20 +45,8 @@ class model_A3C(nn.Module):
                 	init.xavier_uniform(m.weight, gain=np.sqrt(2))
                 	init.constant(m.bias, 0)
 
-    def forward(self, image_input, cin, hin):
+    def forward(self, img_tensor, cin=None, hin=None):
 	#image_input shape is (96, 72)
-	normalize = transforms.Normalize(
-        		mean = [127.5, 127.5, 127.5],
-        		std  = [127.5, 127.5, 127.5]
-	)
-	preprocess = transforms.Compose([
-			transforms.ToPILImage(),
-   			transforms.Resize((96,72)),
-   			transforms.ToTensor(),
-   			normalize
-	])
-	img_tensor = preprocess(image_input)
-	img_tensor.unsqueeze_(0)
         x = self.layer1(Variable(img_tensor)) if self.isActor else \
 					self.layer1(Variable(img_tensor).cuda())
         x = self.layer2(x)
@@ -66,5 +55,5 @@ class model_A3C(nn.Module):
 	#print ("x.shape ", x.shape)
 	if self.isActor:
 		hin, cin = self.lstm(x, (hin, cin))
-		return self.actor_linear(hin), (hin, cin)
+		return self.softmax(self.actor_linear(hin)), (hin, cin)
 	return x

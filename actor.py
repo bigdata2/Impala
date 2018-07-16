@@ -12,13 +12,13 @@ import os
 import deepmind_lab
 import pprint
 from model import model_A3C
-import actions
+import utils
 import ray
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-ACTION_LIST = actions.getactions().values()
+ACTION_LIST = utils.getactions().values()
 
 class trajectory(object):
   """class to store trajectory data."""
@@ -78,10 +78,12 @@ class Actor(object):
     	self.cin = self.lstm_init
     	self.hin = self.lstm_init
 	if rollout.length(): break
+    	rollout.lstm_hin = self.hin.tolist()
+    	rollout.lstm_cin = self.cin.tolist()
     
       obs = self.env.observations()
-      logits, (self.hin, self.cin) = self.model(obs['RGB_INTERLEAVED'], self.cin, self.hin)
-      prob = F.softmax(logits, dim=1)
+      img_tensor = utils.createbatch([obs['RGB_INTERLEAVED']])
+      prob, (self.hin, self.cin) = self.model(img_tensor, self.cin, self.hin)
       action_idx = prob.multinomial(1)[0].tolist()[0]
       pi = prob[0][action_idx].tolist()
       action = ACTION_LIST[action_idx]
@@ -92,6 +94,7 @@ class Actor(object):
     return rollout
 
   def run_test(self):
+    #TODO cleanup this function
     """Run the env for n steps and return a trajectory rollout."""
     weights = ray.get(self.parameterserver.pull.remote())
     self.model.load_state_dict(weights)

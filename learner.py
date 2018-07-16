@@ -2,7 +2,6 @@
 
 from __future__ import absolute_import
 from __future__ import division
-from __future__ import print_function
 
 import argparse
 import random
@@ -10,14 +9,15 @@ import numpy as np
 import os
 
 import deepmind_lab
-import pprint
 from model import model_A3C
-import actions
+import utils
 from parameterserver import ParameterServer
 from actor import Actor
 import ray
+import torch
+import torch.nn as nn
 
-ACTION_LIST = actions.getactions().values()
+ACTION_LIST = utils.getactions().values()
  
 @ray.remote(num_gpus=1)
 class Learner(object):
@@ -30,9 +30,9 @@ class Learner(object):
     self.id = -1 
     self.parameterserver = ps
     self.model = model_A3C()
-    self.model = self.model.cuda()
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
+    self.model = self.model.cuda()
     print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
   
   def get_id(self):
@@ -59,12 +59,27 @@ class Learner(object):
     while True:
     	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
-    	#print("number of actors ", len(trajectory))
 	for t in trajectory:
 		print ("trajectory actor_id, step: ", t.actor_id, t.step)
+		self.train(t)
 		actorsObjIds.extend([actors[t.actor_id].run_train.remote()])
     return
     
+  def train(self, trajectory):
+	states_batch = utils.createbatch(trajectory.states)
+	fc_out = self.model(states_batch)
+	hin = torch.cuda.FloatTensor(trajectory.lstm_hin)
+	cin = torch.cuda.FloatTensor(trajectory.lstm_cin)
+	lstm_out = []
+	for i in range(trajectory.length()):
+    	# Step through the convnet+fc out one state at a time.
+		lstm_in = fc_out[i].unsqueeze_(0)
+    		hin, cin = self.model.lstm(lstm_in, (hin,cin))
+		lstm_out += [hin]
+	lstm_out_tensor = torch.stack(lstm_out)
+	actions = self.model.actor_linear(lstm_out_tensor)
+	action_prob = self.model.softmax(actions)
+	#print ("action_prob.shape ",action_prob.shape)
 
 if __name__ == '__main__':
    RAY_HEAD="10.145.142.25:6379"
