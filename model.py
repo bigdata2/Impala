@@ -34,6 +34,7 @@ class model_A3C(nn.Module):
 	self.layer3 = fcLayer(self.linear_input_dim, self.linear_output_dim)
 	self.lstm = nn.LSTMCell(256, 256)
 	self.actor_linear = nn.Linear(256, utils.action_space())
+	self.critic_linear = nn.Linear(256, 1)
 	self.softmax = nn.Softmax()
 	self.weights_init(self.layer1)
 	self.weights_init(self.layer2)

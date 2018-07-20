@@ -1,8 +1,5 @@
 """Learner with parameter server"""
 
-from __future__ import absolute_import
-from __future__ import division
-
 import argparse
 import random
 import numpy as np
@@ -15,7 +12,7 @@ from parameterserver import ParameterServer
 from actor import Actor
 import ray
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 
 ACTION_LIST = utils.getactions().values()
  
@@ -33,15 +30,18 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
+    self.lr = 5e-4
+    self.wd = 1e-5
     print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
   
   def get_id(self):
     return self.id
 
   def run(self, length, width, height, fps, level, record, demo, video, 
-          agents_num, actors):
+          agents_num, actors, gamma):
     """Gets trajectories from actors and trains learner."""
     print("level............................... ", level)
+    self.gamma = gamma
     config = {
         'fps': str(fps),
         'width': str(width),
@@ -56,30 +56,62 @@ class Learner(object):
     config['demofiles'] = "/tmp"
 
     actorsObjIds = [actor.run_train.remote() for actor in actors]
+    optimizer = self.create_optimizer()
     while True:
     	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
 	for t in trajectory:
-		print ("trajectory actor_id, step: ", t.actor_id, t.step)
-		self.train(t)
+		#print ("trajectory actor_id, step: ", t.actor_id, t.step)
+		self.train(t, optimizer)
+    		params = self.model.cpu().state_dict()
+    		self.parameterserver.push.remote(dict(params))
+    		self.model = self.model.cuda()
 		actorsObjIds.extend([actors[t.actor_id].run_train.remote()])
     return
+
+  def create_optimizer(self):
+        # setup optimizer
+        optimizer = torch.optim.Adam(self.model.parameters(), self.lr,
+                                   weight_decay=self.wd)
+        return optimizer
     
-  def train(self, trajectory):
+  def train(self, trajectory, optimizer):
 	states_batch = utils.createbatch(trajectory.states)
 	fc_out = self.model(states_batch)
 	hin = torch.cuda.FloatTensor(trajectory.lstm_hin)
 	cin = torch.cuda.FloatTensor(trajectory.lstm_cin)
 	lstm_out = []
-	for i in range(trajectory.length()):
+	for i in reversed(range(trajectory.length())):
     	# Step through the convnet+fc out one state at a time.
-		lstm_in = fc_out[i].unsqueeze_(0)
+		lstm_in = fc_out[i].unsqueeze(0)
     		hin, cin = self.model.lstm(lstm_in, (hin,cin))
 		lstm_out += [hin]
 	lstm_out_tensor = torch.stack(lstm_out)
 	actions = self.model.actor_linear(lstm_out_tensor)
+	values = self.model.critic_linear(lstm_out_tensor)
+	#print ("values.shape ",values.shape, values[0][0][0])
 	action_prob = self.model.softmax(actions)
-	#print ("action_prob.shape ",action_prob.shape)
+	action_log_prob = F.log_softmax(actions)
+	entropy = -(action_log_prob * action_prob).sum(2)
+	#print("entropy ", entropy.shape, entropy)
+	V = values[-1][0][0]
+	value_loss = 0
+	policy_loss = 0
+	#print("action_prob.shape ",action_prob.shape)
+	for i in reversed(range(trajectory.length()-1)):
+            V = self.gamma * V + trajectory.rewards[i]
+            advantage = V - values[i][0][0]
+            value_loss = value_loss + 0.5 * advantage.pow(2)
+	    mu_idx = trajectory.actions[i]#.max(1)[1].tolist()[0]
+	    #print("mu_idx, action_log_prob[i][mu_idx] ", mu_idx, action_log_prob[i][0][mu_idx])
+	    policy_loss = policy_loss - \
+                	  action_log_prob[i][0][mu_idx] * \
+                	  - 0.01 * entropy[i]
+	#print("value loss ", value_loss)
+	self.model.zero_grad()
+	#print("policy_loss + 0.5 * value_loss ", policy_loss + 0.5 * value_loss)
+        (policy_loss + 0.5 * value_loss).backward()
+        optimizer.step()
 
 if __name__ == '__main__':
    RAY_HEAD="10.145.142.25:6379"
@@ -93,6 +125,8 @@ if __name__ == '__main__':
                        help="the address of the head of the cluster, default is {0}".format(RAY_HEAD), default=RAY_HEAD)
    parser.add_argument("--actors", type=int, default=NUMBER_OF_ACTORS,
                        help="the number of actors to start, default is {0}".format(NUMBER_OF_ACTORS))
+   parser.add_argument("--gamma", type=float, default=0.99,
+                       help="the discount factor, default is {0}".format(0.99))
    parser.add_argument('--length', type=int, default=1000,
                        help='Number of steps to run the agent')
    parser.add_argument('--width', type=int, default=280,
@@ -150,6 +184,6 @@ if __name__ == '__main__':
 
    objid = learner.run.remote(args.length, args.width, args.height, 
 		args.fps, args.level_script, args.record, args.demo,
-	        args.video, args.actors, actors)
+	        args.video, args.actors, actors, args.gamma)
   
    ray.wait([objid])
