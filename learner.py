@@ -30,8 +30,8 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 5e-4
-    self.wd = 1e-5
+    self.lr = 1e-3
+    self.wd = 1e-3
     print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
   
   def get_id(self):
@@ -54,13 +54,18 @@ class Learner(object):
     if video:
       config['video'] = video
     config['demofiles'] = "/tmp"
-
+    testactor = actors.pop()
     actorsObjIds = [actor.run_train.remote() for actor in actors]
+    testactorsObjId = [testactor.run_test.remote()]
+    actorsObjIds += testactorsObjId
     optimizer = self.create_optimizer()
     while True:
     	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
 	for t in trajectory:
+		if not t:
+    		    actorsObjIds.extend([testactor.run_test.remote()])
+		    continue
 		#print ("trajectory actor_id, step: ", t.actor_id, t.step)
 		self.train(t, optimizer)
     		params = self.model.cpu().state_dict()
@@ -83,9 +88,9 @@ class Learner(object):
 	lstm_out = []
 	for i in reversed(range(trajectory.length())):
     	# Step through the convnet+fc out one state at a time.
-		lstm_in = fc_out[i].unsqueeze(0)
-    		hin, cin = self.model.lstm(lstm_in, (hin,cin))
-		lstm_out += [hin]
+	    lstm_in = fc_out[i].unsqueeze(0)
+    	    hin, cin = self.model.lstm(lstm_in, (hin,cin))
+	    lstm_out += [hin]
 	lstm_out_tensor = torch.stack(lstm_out)
 	actions = self.model.actor_linear(lstm_out_tensor)
 	values = self.model.critic_linear(lstm_out_tensor)
