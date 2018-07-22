@@ -33,7 +33,7 @@ class trajectory(object):
     self.actions  += [action]
     self.rewards  += [reward] 
     self.pi_at_st += [pi]
-    self.step     = step #trajectory number for debugging only
+    self.terminal = False
 
   def length(self):
     return len(self.rewards)
@@ -76,9 +76,11 @@ class Actor(object):
 	self.steps = 0
     	self.cin = self.lstm_init
     	self.hin = self.lstm_init
-	if rollout.length(): break
-    	rollout.lstm_hin = self.hin.tolist()
-    	rollout.lstm_cin = self.cin.tolist()
+	rollout.terminal = True
+	break
+	#if rollout.length(): break
+    	#rollout.lstm_hin = self.hin.tolist()
+    	#rollout.lstm_cin = self.cin.tolist()
     
       obs = self.env.observations()
       img_tensor = utils.createbatch([obs['RGB_INTERLEAVED']])
@@ -95,7 +97,6 @@ class Actor(object):
     return rollout
 
   def run_test(self):
-    #TODO cleanup this function
     """Run the env for n steps and return a trajectory rollout."""
     weights = ray.get(self.parameterserver.pull.remote())
     #print weights['critic_linear.weight']

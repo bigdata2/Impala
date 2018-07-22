@@ -80,6 +80,7 @@ class Learner(object):
         return optimizer
     
   def train(self, trajectory, optimizer):
+	if trajectory.length() < 2: return
 	states_batch = utils.createbatch(trajectory.states)
 	fc_out = self.model(states_batch)
 	hin = torch.cuda.FloatTensor(trajectory.lstm_hin)
@@ -96,10 +97,9 @@ class Learner(object):
 	action_prob = self.model.softmax(actions)
 	action_log_prob = F.log_softmax(actions)
 	entropy = -(action_log_prob * action_prob).sum(2)
-	R = values[-1][0][0] #TODO for non-terminal for terminal R should be 0
+	R = torch.FloatTensor(0) if trajectory.terminal else values[-1][0][0]
 	value_loss = 0
 	policy_loss = 0
-	#TODO process terminal state differently
 	for i in reversed(range(trajectory.length()-1)):
             R = self.gamma * R + trajectory.rewards[i]
             advantage = R - values[i][0][0]
