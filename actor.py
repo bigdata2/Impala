@@ -98,6 +98,7 @@ class Actor(object):
     #TODO cleanup this function
     """Run the env for n steps and return a trajectory rollout."""
     weights = ray.get(self.parameterserver.pull.remote())
+    #print weights['critic_linear.weight']
     self.model.load_state_dict(weights)
     totalreward = 0
     self.steps += 1
@@ -120,9 +121,6 @@ class Actor(object):
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward
 
-      #print("prob ", prob)
-      #print("action ", action)
-      #print("action_idx ", action_idx)
     #print("TEST ACTOR: Rollout Finished Total Reward for actor_id {}:  {}".format(self.id, totalreward))
     self.rewards += totalreward
     return

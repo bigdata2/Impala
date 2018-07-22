@@ -66,7 +66,6 @@ class Learner(object):
 		if not t:
     		    actorsObjIds.extend([testactor.run_test.remote()])
 		    continue
-		#print ("trajectory actor_id, step: ", t.actor_id, t.step)
 		self.train(t, optimizer)
     		params = self.model.cpu().state_dict()
     		self.parameterserver.push.remote(dict(params))
@@ -87,34 +86,34 @@ class Learner(object):
 	cin = torch.cuda.FloatTensor(trajectory.lstm_cin)
 	lstm_out = []
 	for i in reversed(range(trajectory.length())):
-    	# Step through the convnet+fc out one state at a time.
+    	# Step through the convnet+fc-out one state at a time.
 	    lstm_in = fc_out[i].unsqueeze(0)
     	    hin, cin = self.model.lstm(lstm_in, (hin,cin))
 	    lstm_out += [hin]
 	lstm_out_tensor = torch.stack(lstm_out)
 	actions = self.model.actor_linear(lstm_out_tensor)
 	values = self.model.critic_linear(lstm_out_tensor)
-	#print ("values.shape ",values.shape, values[0][0][0])
 	action_prob = self.model.softmax(actions)
 	action_log_prob = F.log_softmax(actions)
 	entropy = -(action_log_prob * action_prob).sum(2)
-	#print("entropy ", entropy.shape, entropy)
-	V = values[-1][0][0]
+	R = values[-1][0][0] #TODO for non-terminal for terminal R should be 0
 	value_loss = 0
 	policy_loss = 0
-	#print("action_prob.shape ",action_prob.shape)
+	#TODO process terminal state differently
 	for i in reversed(range(trajectory.length()-1)):
-            V = self.gamma * V + trajectory.rewards[i]
-            advantage = V - values[i][0][0]
+            R = self.gamma * R + trajectory.rewards[i]
+            advantage = R - values[i][0][0]
             value_loss = value_loss + 0.5 * advantage.pow(2)
-	    mu_idx = trajectory.actions[i]#.max(1)[1].tolist()[0]
-	    #print("mu_idx, action_log_prob[i][mu_idx] ", mu_idx, action_log_prob[i][0][mu_idx])
+	    mu_idx = trajectory.actions[i] 
+	    importance_weight = action_prob[i][0][mu_idx] / \
+			        torch.cuda.FloatTensor([trajectory.pi_at_st[i]])
+
 	    policy_loss = policy_loss - \
+			  importance_weight * \
                 	  action_log_prob[i][0][mu_idx] * \
-                	  - 0.01 * entropy[i]
-	#print("value loss ", value_loss)
+			  advantage - \
+                	  0.01 * entropy[i]
 	self.model.zero_grad()
-	#print("policy_loss + 0.5 * value_loss ", policy_loss + 0.5 * value_loss)
         (policy_loss + 0.5 * value_loss).backward()
         optimizer.step()
 
