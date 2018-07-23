@@ -21,9 +21,9 @@ class Learner(object):
   """Learner to get trajectories from Actors running DeepMind Lab simulator."""
 
   def __init__(self, ps):
-    print("Initialize GPU environment")
-    gpu_ids = ",".join([str(i) for i in ray.get_gpu_ids()])
-    os.environ["CUDA_VISIBLE_DEVICES"] = gpu_ids
+    #gpu_ids = ",".join([str(i) for i in ray.get_gpu_ids()])
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(ray.get_gpu_ids()[0] % 4) #gpu_ids
+    print("Initialize learner environment gpu id: ", os.environ["CUDA_VISIBLE_DEVICES"])
     self.id = -1 
     self.parameterserver = ps
     self.model = model_A3C()
@@ -32,7 +32,7 @@ class Learner(object):
     self.model = self.model.cuda()
     self.lr = 1e-3
     self.wd = 1e-3
-    print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
+    #print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
   
   def get_id(self):
     return self.id
@@ -156,7 +156,7 @@ if __name__ == '__main__':
  
    print("Using Ray Cluster on {}".format(args.cluster))
    if args.standalone is True:
-     ray.init()
+     ray.init(num_gpus=16)
    else:
      ray.init(redis_address=args.cluster)
    

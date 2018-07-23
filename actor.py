@@ -38,12 +38,14 @@ class trajectory(object):
   def length(self):
     return len(self.rewards)
  
-@ray.remote
+@ray.remote(num_gpus=1)
 class Actor(object):
   """Simple actor for DeepMind Lab."""
 
   def __init__(self, idx, length, level, config, ps):
-    print("Initialize Actor environment")
+    #Running actor on fractional GPU, see https://github.com/ray-project/ray/issues/402#issuecomment-363590303
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(ray.get_gpu_ids()[0] % 4)
+    print("Initialize Actor environment gpu id: ", os.environ["CUDA_VISIBLE_DEVICES"])
     self.id = idx
     self.steps = 0
     self.parameterserver = ps
@@ -52,7 +54,8 @@ class Actor(object):
     self.env.reset()
     action_spec = self.env.action_spec()
     self.model = model_A3C(isActor=True)
-    self.lstm_init = torch.zeros(1, 256) #TODO remove hardcoding
+    self.model = self.model.cuda()
+    self.lstm_init = torch.zeros(1, 256).cuda() #TODO remove hardcoding
     self.cin = self.lstm_init
     self.hin = self.lstm_init
     self.rewards = 0

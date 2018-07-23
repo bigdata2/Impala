@@ -48,8 +48,9 @@ class model_A3C(nn.Module):
 
     def forward(self, img_tensor, cin=None, hin=None):
 	#image_input shape is (96, 72)
-        x = self.layer1(Variable(img_tensor)) if self.isActor else \
-					self.layer1(Variable(img_tensor).cuda())
+        #x = self.layer1(Variable(img_tensor)) if self.isActor else \
+	#				self.layer1(Variable(img_tensor).cuda())
+        x = self.layer1(Variable(img_tensor).cuda())
         x = self.layer2(x)
         x = x.view(x.size(0), -1)
         x = self.layer3(x)
