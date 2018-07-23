@@ -139,6 +139,12 @@ if __name__ == '__main__':
                        help='Vertical size of the observations')
    parser.add_argument('--fps', type=int, default=60,
                        help='Number of frames per second')
+   parser.add_argument('--savemodel_path', type=str, default="./checkpoint.pt",
+                       help='Set the path to save trained model parameters')
+   parser.add_argument('--loadmodel_path', type=str, default="./checkpoint.pt",
+                       help='Set the path to load trained model parameters')
+   parser.add_argument('--test', type=str, default=None,
+                       help='Train or Test')
    parser.add_argument('--runfiles_path', type=str, default=None,
                        help='Set the runfiles path to find DeepMind Lab data')
    parser.add_argument('--level_script', type=str,
@@ -183,9 +189,12 @@ if __name__ == '__main__':
    config['demofiles'] = "/tmp"
 
    # Start actors.
-   actors = [Actor.remote(idx, args.length, args.level_script, config, ps) 
+   #TODO: pass arg dictionary instead of individuals parameters
+   actors = [Actor.remote(idx, args.length, args.level_script, config, ps,
+	                 args.savemodel_path, args.loadmodel_path, args.test) 
 	    for idx in range(args.actors)]
 
+   #TODO: pass arg dictionary instead of individuals parameters
    objid = learner.run.remote(args.length, args.width, args.height, 
 		args.fps, args.level_script, args.record, args.demo,
 	        args.video, args.actors, actors, args.gamma)

@@ -42,7 +42,7 @@ class trajectory(object):
 class Actor(object):
   """Simple actor for DeepMind Lab."""
 
-  def __init__(self, idx, length, level, config, ps):
+  def __init__(self, idx, length, level, config, ps, savemodel_path, loadmodel_path, test):
     #Running actor on fractional GPU, see https://github.com/ray-project/ray/issues/402#issuecomment-363590303
     os.environ["CUDA_VISIBLE_DEVICES"] = str(ray.get_gpu_ids()[0] % 4)
     print("Initialize Actor environment gpu id: ", os.environ["CUDA_VISIBLE_DEVICES"])
@@ -59,6 +59,9 @@ class Actor(object):
     self.cin = self.lstm_init
     self.hin = self.lstm_init
     self.rewards = 0
+    self.savepath = savemodel_path
+    self.loadpath = loadmodel_path
+    self.test = test
   
   def run_train(self):    
     """Run the env for n steps and return a trajectory rollout."""
@@ -101,22 +104,22 @@ class Actor(object):
 
   def run_test(self):
     """Run the env for n steps and return a trajectory rollout."""
-    weights = ray.get(self.parameterserver.pull.remote())
-    #print weights['critic_linear.weight']
-    self.model.load_state_dict(weights)
+    weights = None
+    if not self.test:
+    	weights = ray.get(self.parameterserver.pull.remote())
+    	#print weights['critic_linear.weight']
+    	self.model.load_state_dict(weights)
+        torch.save(weights, self.savepath)
+    else: 
+	weights = torch.load(self.loadpath,
+    		             map_location=lambda storage, loc: storage)
     totalreward = 0
     self.steps += 1
-    time.sleep(5)
-    for _ in range(self.length):
-      if not self.env.is_running():
-        print('Environment stopped. Restarting...')
-        print("Total Reward for actor_id {}:  {}".format(self.id, self.rewards))
-        self.env.reset()
-        self.steps = 0
-        self.cin = self.lstm_init
-        self.hin = self.lstm_init
-    	self.rewards = 0
-
+    time.sleep(15)
+    self.env.reset()
+    self.cin = self.lstm_init
+    self.hin = self.lstm_init
+    while self.env.is_running():
       obs = self.env.observations()
       img_tensor = utils.createbatch([obs['RGB_INTERLEAVED']])
       prob, (self.hin, self.cin) = self.model(img_tensor, self.cin, self.hin)
@@ -125,8 +128,7 @@ class Actor(object):
       reward = self.env.step(action, num_steps=4) #for action repeat=4
       totalreward += reward
 
-    #print("TEST ACTOR: Rollout Finished Total Reward for actor_id {}:  {}".format(self.id, totalreward))
-    self.rewards += totalreward
+    print("TEST ACTOR: Test Finished Total Reward for actor_id {}:  {}".format(self.id, totalreward))
     return
       
   def get_id(self):
