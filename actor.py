@@ -104,6 +104,7 @@ class Actor(object):
 
   def run_test(self):
     """Run the env for n steps and return a trajectory rollout."""
+    time.sleep(30)
     weights = None
     if not self.test:
     	weights = ray.get(self.parameterserver.pull.remote())

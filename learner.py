@@ -21,8 +21,7 @@ class Learner(object):
   """Learner to get trajectories from Actors running DeepMind Lab simulator."""
 
   def __init__(self, ps):
-    #gpu_ids = ",".join([str(i) for i in ray.get_gpu_ids()])
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(ray.get_gpu_ids()[0] % 4) #gpu_ids
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(ray.get_gpu_ids()[0] % 4)
     print("Initialize learner environment gpu id: ", os.environ["CUDA_VISIBLE_DEVICES"])
     self.id = -1 
     self.parameterserver = ps
@@ -30,10 +29,9 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 1e-3
+    self.lr = 1e-4
     self.wd = 1e-3
-    self.eps = 1e-3
-    #print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
+    self.eps = 1e-4
   
   def get_id(self):
     return self.id
@@ -61,17 +59,19 @@ class Learner(object):
     actorsObjIds += testactorsObjId
     optimizer = self.create_optimizer()
     while True:
-    	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
+    	ready, actorsObjIds = ray.wait(actorsObjIds, 10)
    	trajectory = ray.get(ready)
+	self.model.zero_grad()
 	for t in trajectory:
 		if not t:
     		    actorsObjIds.extend([testactor.run_test.remote()])
 		    continue
-		self.train(t, optimizer)
-    		params = self.model.cpu().state_dict()
-    		self.parameterserver.push.remote(dict(params))
-    		self.model = self.model.cuda()
 		actorsObjIds.extend([actors[t.actor_id].run_train.remote()])
+		self.train(t, optimizer)
+	optimizer.step()
+    	params = self.model.cpu().state_dict()
+    	self.parameterserver.push.remote(dict(params))
+    	self.model = self.model.cuda()
     return
 
   def create_optimizer(self):
@@ -106,13 +106,12 @@ class Learner(object):
 	action_prob = self.model.softmax(actions)
 	action_log_prob = F.log_softmax(actions)
 	entropy = -(action_log_prob * action_prob).sum(2)
-	#R = torch.FloatTensor(0) if trajectory.terminal else values[-1][0][0]
-	R = values[-1][0]
+	R = torch.cuda.FloatTensor(0) if trajectory.terminal else values[-1][0]
 	value_loss = 0
 	policy_loss = 0
 	for i in reversed(range(trajectory.length()-1)):
             R = self.gamma * R + self.clipreward(trajectory.rewards[i])
-            advantage = R - values[i][0][0]
+            advantage = R - values[i][0]
             value_loss = value_loss + 0.5 * advantage.pow(2)
 	    mu_idx = trajectory.actions[i] 
 	    importance_weight = action_prob[i][0][mu_idx] / \
@@ -124,9 +123,8 @@ class Learner(object):
                 	  action_log_prob[i][0][mu_idx] * \
 			  advantage - \
                 	  0.01 * entropy[i]
-	self.model.zero_grad()
         (policy_loss + 0.5 * value_loss).backward()
-        optimizer.step()
+        return
 
 if __name__ == '__main__':
    RAY_HEAD="10.145.142.25:6379"
@@ -173,7 +171,7 @@ if __name__ == '__main__':
  
    print("Using Ray Cluster on {}".format(args.cluster))
    if args.standalone is True:
-     ray.init(num_gpus=16)
+     ray.init(num_gpus=32)
    else:
      ray.init(redis_address=args.cluster)
    

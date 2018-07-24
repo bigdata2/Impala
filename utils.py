@@ -14,7 +14,7 @@ ACTIONS = {
             'look_right': _action(20, 0, 0, 0, 0, 0, 0),
             'forward_look_left': _action(-20, 0, 0, 1, 0, 0, 0),
             'forward_look_right': _action(20, 0, 0, 1, 0, 0, 0),
-            'fire': _action(0, 0, 0, 0, 1, 0, 0),
+            #'fire': _action(0, 0, 0, 0, 1, 0, 0),
           }
 
 def getactions():
