@@ -32,6 +32,7 @@ class Learner(object):
     self.model = self.model.cuda()
     self.lr = 1e-3
     self.wd = 1e-3
+    self.eps = 1e-3
     #print("Learner ID {} possibly on GPUs {} start ...".format(self.id, gpu_ids))
   
   def get_id(self):
@@ -75,9 +76,17 @@ class Learner(object):
 
   def create_optimizer(self):
         # setup optimizer
-        optimizer = torch.optim.Adam(self.model.parameters(), self.lr,
-                                   weight_decay=self.wd)
+        #optimizer = torch.optim.Adam(self.model.parameters(), self.lr,
+        #                           weight_decay=self.wd)
+	optimizer = torch.optim.RMSprop(self.model.parameters(), 
+		    lr=self.lr, eps=self.eps)
         return optimizer
+
+  def clipreward(self, reward):
+	tanh = torch.nn.Tanh()
+	reward = tanh(torch.FloatTensor([reward]).cuda())
+	reward =  0.3 * min(reward, 0) + 5.0 * max(reward, 0)
+	return reward
     
   def train(self, trajectory, optimizer):
 	if trajectory.length() < 2: return
@@ -97,11 +106,12 @@ class Learner(object):
 	action_prob = self.model.softmax(actions)
 	action_log_prob = F.log_softmax(actions)
 	entropy = -(action_log_prob * action_prob).sum(2)
-	R = torch.FloatTensor(0) if trajectory.terminal else values[-1][0][0]
+	#R = torch.FloatTensor(0) if trajectory.terminal else values[-1][0][0]
+	R = values[-1][0]
 	value_loss = 0
 	policy_loss = 0
 	for i in reversed(range(trajectory.length()-1)):
-            R = self.gamma * R + trajectory.rewards[i]
+            R = self.gamma * R + self.clipreward(trajectory.rewards[i])
             advantage = R - values[i][0][0]
             value_loss = value_loss + 0.5 * advantage.pow(2)
 	    mu_idx = trajectory.actions[i] 

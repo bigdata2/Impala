@@ -108,14 +108,13 @@ class Actor(object):
     if not self.test:
     	weights = ray.get(self.parameterserver.pull.remote())
     	#print weights['critic_linear.weight']
-    	self.model.load_state_dict(weights)
         torch.save(weights, self.savepath)
     else: 
 	weights = torch.load(self.loadpath,
     		             map_location=lambda storage, loc: storage)
+    self.model.load_state_dict(weights)
     totalreward = 0
     self.steps += 1
-    time.sleep(15)
     self.env.reset()
     self.cin = self.lstm_init
     self.hin = self.lstm_init
