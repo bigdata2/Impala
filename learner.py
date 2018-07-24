@@ -117,6 +117,7 @@ class Learner(object):
 	    mu_idx = trajectory.actions[i] 
 	    importance_weight = action_prob[i][0][mu_idx] / \
 			        torch.cuda.FloatTensor([trajectory.pi_at_st[i]])
+	    importance_weight = torch.clamp(importance_weight, max=1.0)
 
 	    policy_loss = policy_loss - \
 			  importance_weight * \
