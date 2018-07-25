@@ -29,9 +29,9 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 1e-4
+    self.lr = 1e-5
     self.wd = 1e-3
-    self.eps = 1e-4
+    self.eps = 1e-5
   
   def get_id(self):
     return self.id
@@ -59,18 +59,20 @@ class Learner(object):
     actorsObjIds += testactorsObjId
     optimizer = self.create_optimizer()
     queue = []
+    policy_loss, value_loss = None, None
     while True:
     	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
 	if not trajectory[0]:
     	    actorsObjIds.extend([testactor.run_test.remote()])
+	    print("policy_loss, value_loss ", policy_loss, value_loss)
 	    continue
 	actorsObjIds.extend([actors[trajectory[0].actor_id].run_train.remote()])
 	queue.append(trajectory[0])
 	if len(queue) < 4: continue #batch size of 4
 	self.model.zero_grad()
 	for t in queue:
-		self.train(t, optimizer)
+		policy_loss, value_loss = self.train(t, optimizer)
 	optimizer.step()
     	params = self.model.cpu().state_dict()
     	self.parameterserver.push.remote(dict(params))
@@ -93,7 +95,7 @@ class Learner(object):
 	return reward
     
   def train(self, trajectory, optimizer):
-	if trajectory.length() < 2: return
+	if trajectory.length() < 2: return None, None
 	states_batch = utils.createbatch(trajectory.states)
 	fc_out = self.model(states_batch)
 	hin = torch.cuda.FloatTensor(trajectory.lstm_hin)
@@ -128,7 +130,7 @@ class Learner(object):
 			  advantage - \
                 	  0.01 * entropy[i]
         (policy_loss + 0.5 * value_loss).backward()
-        return
+        return policy_loss, value_loss
 
 if __name__ == '__main__':
    RAY_HEAD="10.145.142.25:6379"
