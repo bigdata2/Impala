@@ -58,20 +58,24 @@ class Learner(object):
     testactorsObjId = [testactor.run_test.remote()]
     actorsObjIds += testactorsObjId
     optimizer = self.create_optimizer()
+    queue = []
     while True:
-    	ready, actorsObjIds = ray.wait(actorsObjIds, 10)
+    	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
+	if not trajectory[0]:
+    	    actorsObjIds.extend([testactor.run_test.remote()])
+	    continue
+	actorsObjIds.extend([actors[trajectory[0].actor_id].run_train.remote()])
+	queue.append(trajectory[0])
+	if len(queue) < 4: continue #batch size of 4
 	self.model.zero_grad()
-	for t in trajectory:
-		if not t:
-    		    actorsObjIds.extend([testactor.run_test.remote()])
-		    continue
-		actorsObjIds.extend([actors[t.actor_id].run_train.remote()])
+	for t in queue:
 		self.train(t, optimizer)
 	optimizer.step()
     	params = self.model.cpu().state_dict()
     	self.parameterserver.push.remote(dict(params))
     	self.model = self.model.cuda()
+	queue = []
     return
 
   def create_optimizer(self):
