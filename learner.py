@@ -13,6 +13,7 @@ from actor import Actor
 import ray
 import torch
 import torch.nn.functional as F
+from math import pow
 
 ACTION_LIST = utils.getactions().values()
  
@@ -29,7 +30,7 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 1e-4
+    self.lr = 1e-3
     self.wd = 1e-3
     self.eps = 1e-4
   
@@ -82,8 +83,6 @@ class Learner(object):
 
   def create_optimizer(self):
         # setup optimizer
-        #optimizer = torch.optim.Adam(self.model.parameters(), self.lr,
-        #                           weight_decay=self.wd)
 	optimizer = torch.optim.RMSprop(self.model.parameters(), 
 		    lr=self.lr, eps=self.eps)
         return optimizer
@@ -95,7 +94,7 @@ class Learner(object):
 	return reward
     
   def train(self, trajectory, optimizer):
-	if trajectory.length() < 2: return None, None
+	if trajectory.length() < 3: return None, None
 	states_batch = utils.createbatch(trajectory.states)
 	fc_out = self.model(states_batch)
 	hin = torch.cuda.FloatTensor(trajectory.lstm_hin)
@@ -112,10 +111,10 @@ class Learner(object):
 	action_prob = self.model.softmax(actions)
 	action_log_prob = F.log_softmax(actions)
 	entropy = -(action_log_prob * action_prob).sum(2)
-	R = torch.cuda.FloatTensor(0) if trajectory.terminal else values[-1][0]
+	R = torch.cuda.FloatTensor(0) if trajectory.terminal else values[-2][0]
 	value_loss = 0
 	policy_loss = 0
-	for i in reversed(range(trajectory.length()-1)):
+	for i in reversed(range(trajectory.length()-2)):
             R = self.gamma * R + self.clipreward(trajectory.rewards[i])
             loss = R - values[i][0]
             value_loss = value_loss + 0.5 * loss.pow(2)
@@ -125,8 +124,9 @@ class Learner(object):
 			        torch.cuda.FloatTensor([trajectory.pi_at_st[i]])
 	    importance_weight = torch.clamp(importance_weight, max=1.0)
 
-            advantage = trajectory.rewards[i] + self.gamma * \
-			values[i+1][0] - values[i][0]
+            advantage = trajectory.rewards[i] + self.gamma * self.clipreward(trajectory.rewards[i+1]) +\
+			pow(self.gamma,2) * self.clipreward(trajectory.rewards[i+2]) + \
+			values[i][0] + pow(self.gamma,2) * values[i+2][0]
 
 	    policy_loss = policy_loss - \
 			  importance_weight * \
@@ -137,7 +137,7 @@ class Learner(object):
         return policy_loss, value_loss
 
 if __name__ == '__main__':
-   RAY_HEAD="10.145.142.25:6379"
+   RAY_HEAD="IP ADDRESS OF RAY HEAD"
    NUMBER_OF_ACTORS=5
    
    parser = argparse.ArgumentParser(description=__doc__)
@@ -167,7 +167,6 @@ if __name__ == '__main__':
    parser.add_argument('--runfiles_path', type=str, default=None,
                        help='Set the runfiles path to find DeepMind Lab data')
    parser.add_argument('--level_script', type=str,
-                       #default='tests/empty_room_test',
                        default='stairway_to_melon',
                        help='The environment level script to load')
    parser.add_argument('--record', type=str, default=None,#"record",

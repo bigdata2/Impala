@@ -76,7 +76,6 @@ class Actor(object):
     for _ in range(self.length):
       if not self.env.is_running():
         print('Environment stopped. Restarting...')
-        #print("Total Reward for actor_id {}:  {}".format(self.id, self.rewards))
         self.rewards = 0
         self.env.reset()
 	self.steps = 0
@@ -84,9 +83,6 @@ class Actor(object):
     	self.hin = self.lstm_init
 	rollout.terminal = True
 	break
-	#if rollout.length(): break
-    	#rollout.lstm_hin = self.hin.tolist()
-    	#rollout.lstm_cin = self.cin.tolist()
     
       obs = self.env.observations()
       img_tensor = utils.createbatch([obs['RGB_INTERLEAVED']])
@@ -98,7 +94,6 @@ class Actor(object):
       totalreward += reward
       action = action_idx #ACTION_LIST[action_idx]
       rollout.append(obs['RGB_INTERLEAVED'], action, reward, pi, self.steps)
-    #print("Rollout Finished Total Reward for actor_id {}:  {}".format(self.id, totalreward))
     self.rewards += totalreward
     return rollout
 
@@ -108,7 +103,6 @@ class Actor(object):
     weights = None
     if not self.test:
     	weights = ray.get(self.parameterserver.pull.remote())
-    	#print weights['critic_linear.weight']
         torch.save(weights, self.savepath)
     else: 
 	weights = torch.load(self.loadpath,
