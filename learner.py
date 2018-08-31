@@ -36,7 +36,7 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 1e-3
+    self.lr = 5e-3
     self.wd = 1e-3
     self.eps = 1e-4
   
@@ -67,6 +67,7 @@ class Learner(object):
     optimizer = self.create_optimizer()
     queue = []
     policy_loss, value_loss = None, None
+    self.counter = 0
     while True:
     	ready, actorsObjIds = ray.wait(actorsObjIds, 1)
    	trajectory = ray.get(ready)
@@ -76,7 +77,14 @@ class Learner(object):
 	    continue
 	actorsObjIds.extend([actors[trajectory[0].actor_id].run_train.remote()])
 	queue.append(trajectory[0])
-	if len(queue) < 4: continue #batch size of 4
+	if len(queue) < 15: continue #batch size of 4
+	self.counter += 1
+	print("self.counter ", self.counter)
+	if self.counter % 20000 == 0: 
+		self.lr = max(self.lr / 2, 1e-8)
+		for param_group in optimizer.param_groups:
+        		param_group['lr'] = self.lr
+			print("Changing learning rate to: ", self.lr)
 	self.model.zero_grad()
 	for t in queue:
 		policy_loss, value_loss = self.train(t, optimizer)
@@ -97,16 +105,18 @@ class Learner(object):
 	tanh = torch.nn.Tanh()
 	reward = tanh(torch.FloatTensor([reward]).cuda())
 	reward =  0.3 * min(reward, 0) + 5.0 * max(reward, 0)
+	#reward = torch.clamp(reward, min=-1.0, max=1.0)
+	#reward = min(max(reward, -1), 1)
 	return reward
     
   def train(self, trajectory, optimizer):
-	if trajectory.length() < 3: return None, None
+	if trajectory.length() < 2: return None, None
 	states_batch = utils.createbatch(trajectory.states)
 	fc_out = self.model(states_batch)
 	hin = torch.cuda.FloatTensor(trajectory.lstm_hin)
 	cin = torch.cuda.FloatTensor(trajectory.lstm_cin)
 	lstm_out = []
-	for i in reversed(range(trajectory.length())):
+	for i in range(trajectory.length()):
     	# Step through the convnet+fc-out one state at a time.
 	    lstm_in = fc_out[i].unsqueeze(0)
     	    hin, cin = self.model.lstm(lstm_in, (hin,cin))
@@ -117,10 +127,10 @@ class Learner(object):
 	action_prob = self.model.softmax(actions)
 	action_log_prob = F.log_softmax(actions)
 	entropy = -(action_log_prob * action_prob).sum(2)
-	R = torch.cuda.FloatTensor(0) if trajectory.terminal else values[-2][0]
+	R = torch.zeros([1], dtype=torch.float32).cuda() if trajectory.terminal else values[-1][0]
 	value_loss = 0
 	policy_loss = 0
-	for i in reversed(range(trajectory.length()-2)):
+	for i in reversed(range(trajectory.length()-1)):
             R = self.gamma * R + self.clipreward(trajectory.rewards[i])
             loss = R - values[i][0]
             value_loss = value_loss + 0.5 * loss.pow(2)
@@ -130,14 +140,10 @@ class Learner(object):
 			        torch.cuda.FloatTensor([trajectory.pi_at_st[i]])
 	    importance_weight = torch.clamp(importance_weight, max=1.0)
 
-            advantage = trajectory.rewards[i] + self.gamma * self.clipreward(trajectory.rewards[i+1]) +\
-			pow(self.gamma,2) * self.clipreward(trajectory.rewards[i+2]) + \
-			values[i][0] + pow(self.gamma,2) * values[i+2][0]
-
 	    policy_loss = policy_loss - \
 			  importance_weight * \
                 	  action_log_prob[i][0][mu_idx] * \
-			  advantage - \
+			  loss - \
                 	  0.01 * entropy[i]
         (policy_loss + 0.5 * value_loss).backward()
         return policy_loss, value_loss

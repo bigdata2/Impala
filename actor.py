@@ -78,6 +78,7 @@ class Actor(object):
     self.steps += 1
     rollout.lstm_hin = self.hin.tolist()
     rollout.lstm_cin = self.cin.tolist()
+    obs, action, reward, pi = None, None, None, None
     for _ in range(self.length):
       if not self.env.is_running():
         print('Environment stopped. Restarting...')
@@ -86,6 +87,8 @@ class Actor(object):
 	self.steps = 0
     	self.cin = self.lstm_init
     	self.hin = self.lstm_init
+        obs = self.env.observations()
+        rollout.append(obs['RGB_INTERLEAVED'], action, reward, pi, self.steps)
 	rollout.terminal = True
 	break
     
