@@ -36,9 +36,9 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 5e-3
+    self.lr = 1e-2
     self.wd = 1e-3
-    self.eps = 1e-4
+    self.eps = 1e-3
   
   def get_id(self):
     return self.id
@@ -80,8 +80,8 @@ class Learner(object):
 	if len(queue) < 15: continue #batch size of 4
 	self.counter += 1
 	print("self.counter ", self.counter)
-	if self.counter % 20000 == 0: 
-		self.lr = max(self.lr / 2, 1e-8)
+	if self.counter % 50000 == 0: 
+		self.lr = max(self.lr / 2, 1e-5)
 		for param_group in optimizer.param_groups:
         		param_group['lr'] = self.lr
 			print("Changing learning rate to: ", self.lr)
