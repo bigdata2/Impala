@@ -3,4 +3,4 @@ This is an implementation of distributed deep reinforcement learning framework c
 
 To run the program (actor/learner/parameter server) use the following command: python learner.py --length 100 --actors 10 -s --level_script <level script such as seekavoid_arena_01>
 
-Set IP address of RAY HEAD in learner.py before running.
+Set IP address of RAY HEAD in learner.py before running, if running Ray configured as a cluster.
