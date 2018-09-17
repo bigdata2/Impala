@@ -36,9 +36,9 @@ class Learner(object):
     params = self.model.cpu().state_dict()
     self.parameterserver.push.remote(dict(params))
     self.model = self.model.cuda()
-    self.lr = 1e-2
-    self.wd = 1e-3
+    self.lr = 5e-4
     self.eps = 1e-3
+
   
   def get_id(self):
     return self.id
@@ -77,7 +77,7 @@ class Learner(object):
 	    continue
 	actorsObjIds.extend([actors[trajectory[0].actor_id].run_train.remote()])
 	queue.append(trajectory[0])
-	if len(queue) < 15: continue #batch size of 4
+	if len(queue) < 20: continue #batch size of 4
 	self.counter += 1
 	print("self.counter ", self.counter)
 	if self.counter % 50000 == 0: 
